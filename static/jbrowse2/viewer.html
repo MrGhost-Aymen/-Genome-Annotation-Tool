@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>JBrowse 2 Viewer</title>
+    <style>
+        body, html, #root {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden; /* Prevent scrollbars */
+        }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+    <script>
+        async function loadJBrowse() {
+            const urlParams = new URLSearchParams(window.location.search);
+            const sessionId = urlParams.get('session_id');
+
+            if (!sessionId) {
+                document.getElementById('root').innerHTML = '<p>Error: Session ID not found in URL.</p>';
+                console.error("JBrowse Viewer Error: No 'session_id' in URL parameters.");
+                return;
+            }
+
+            const configPath = `/static/jbrowse2/data/${sessionId}/config.json`;
+            console.log("JBrowse Viewer: Attempting to fetch config from:", configPath);
+
+            try {
+                const configResponse = await fetch(configPath);
+                if (!configResponse.ok) {
+                    const errorMessage = `Failed to load config.json: ${configResponse.statusText} (${configResponse.status})`;
+                    console.error("JBrowse Viewer Config Fetch Error:", errorMessage);
+                    throw new Error(errorMessage);
+                }
+                const config = await configResponse.json();
+
+                window.JBrowseAppConfig = config; 
+                console.log("JBrowse Viewer: JBrowseAppConfig set globally:", window.JBrowseAppConfig);
+
+                const jbrowseScript = document.createElement('script');
+                jbrowseScript.src = '/static/jbrowse2/static/js/main.c2c39dcb.js';
+                jbrowseScript.defer = true; 
+
+                jbrowseScript.onload = () => {
+                    console.log("JBrowse Viewer: JBrowse main script loaded. JBrowse should now be initializing.");
+                };
+
+                jbrowseScript.onerror = () => {
+                    document.getElementById('root').innerHTML = '<p>Error: Failed to load JBrowse2 script.</p>';
+                    console.error("JBrowse Viewer Error: Failed to load JBrowse2 script from:", jbrowseScript.src);
+                };
+
+                document.body.appendChild(jbrowseScript);
+                console.log("JBrowse Viewer: JBrowse main script tag appended to body.");
+
+            } catch (error) {
+                console.error("JBrowse Viewer Initialization Error:", error);
+                document.getElementById('root').innerHTML = `<div style="color:red;text-align:center;padding:20px;">
+                    <h3>Error loading JBrowse viewer</h3>
+                    <p>${error.message}</p>
+                    <p>Please check the browser console (F12, select iframe context) for more details.</p>
+                </div>`;
+            }
+        }
+
+        loadJBrowse();
+        console.log("JBrowse Viewer: loadJBrowse() function called.");
+    </script>
+</body>
+</html>
