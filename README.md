@@ -99,7 +99,7 @@ Setup Instructions
 
     Clone the repository:
 
-    git clone https://github.com/your-username/genome-annotation-tool.git
+    git clone https://github.com/MrGhost-Aymen/genome-annotation-tool.git
     cd genome-annotation-tool
 
     Create a virtual environment (recommended):
