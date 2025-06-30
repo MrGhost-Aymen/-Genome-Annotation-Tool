@@ -1,0 +1,1449 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Genome Annotation Viewer</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                    },
+                }
+            }
+        }
+    </script>
+    <!-- Inter font -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <!-- IGV.js library from CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/igv@3.4.0/dist/igv.min.js"></script>
+    <style>
+        /* Custom scrollbar for feature list */
+        .custom-scrollbar::-webkit-scrollbar {
+            width: 8px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-track {
+            background: #f0f2f5;
+            border-radius: 10px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+            background: #cbd5e1;
+            border-radius: 10px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+            background: #94a3b8;
+        }
+
+        /* Resizer handle styling */
+        .resize-handle {
+            width: 8px;
+            cursor: ew-resize;
+            background-color: #e2e8f0; /* bg-gray-200 */
+            transition: background-color 0.2s ease;
+            flex-shrink: 0; /* Prevent it from shrinking */
+        }
+        .resize-handle:hover {
+            background-color: #94a3b8; /* bg-gray-400 */
+        }
+
+        /* Highlight selected feature in list */
+        .feature-item.selected {
+            background-color: #e0f2fe; /* light blue */
+            border-color: #90cdf4; /* darker blue */
+            box-shadow: 0 0 0 2px rgba(66, 153, 225, 0.5); /* blue ring */
+        }
+    </style>
+</head>
+<body class="bg-gray-100 min-h-screen flex flex-col items-center p-4">
+
+    <!-- Message Box -->
+    <div id="messageBox" class="message-box bg-blue-100 text-blue-800 border border-blue-200 px-4 py-3 rounded-lg shadow-md mb-4 w-full max-w-2xl hidden" role="alert">
+        This is a message.
+    </div>
+
+    <!-- Upload Section -->
+    <div id="uploadSection" class="bg-white p-8 rounded-xl shadow-lg w-full max-w-lg mb-8">
+        <h1 class="text-3xl font-bold text-gray-800 mb-6 text-center">Upload Genome Files</h1>
+        <form id="uploadForm" class="space-y-6">
+            <div>
+                <label for="fastaFile" class="block text-sm font-medium text-gray-700 mb-2">FASTA File (.fasta, .fna, .fa)</label>
+                <input type="file" id="fastaFile" name="fasta_file" accept=".fasta,.fna,.fa" required
+                       class="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-green-50 file:text-green-700 hover:file:bg-green-100 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2">
+            </div>
+            <div>
+                <label for="gffFile" class="block text-sm font-medium text-gray-700 mb-2">GFF3 File (.gff3, .gff)</label>
+                <input type="file" id="gffFile" name="gff_file" accept=".gff3,.gff" required
+                       class="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-green-50 file:text-green-700 hover:file:bg-green-100 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2">
+            </div>
+            <button type="submit" id="uploadButton"
+                    class="w-full bg-green-600 text-white py-3 px-4 rounded-lg font-semibold hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2 transition duration-200 ease-in-out">
+                Upload & View Genome
+            </button>
+        </form>
+    </div>
+
+    <!-- Main Viewer and Tools Section (Hidden by default) -->
+    <div id="viewerAndToolsSection" class="hidden w-full max-w-7xl lg:flex lg:space-x-2">
+        <!-- IGV Viewer (Left Side) -->
+        <div id="igvContainer" class="flex-1 bg-white rounded-xl shadow-lg overflow-hidden mb-6 lg:mb-0 min-w-[300px]">
+            <h2 class="text-2xl font-semibold text-gray-800 p-4 border-b border-gray-200">Genome Visualization</h2>
+            <div id="igv-div" class="h-[600px] w-full"></div>
+        </div>
+
+        <!-- Resizer Handle -->
+        <div id="resizeHandle" class="resize-handle hidden lg:block h-auto"></div>
+
+        <!-- Annotation Tools (Right Side) -->
+        <div id="annotationToolsPanel" class="lg:w-1/4 bg-white rounded-xl shadow-lg p-6 flex flex-col min-w-[300px] transition-all duration-200 ease-in-out">
+            <div class="flex items-center justify-between mb-4 border-b border-gray-200 pb-2">
+                <h2 class="text-2xl font-semibold text-gray-800">Annotation Tools</h2>
+                <!-- Mobile Toggle Button -->
+                <button id="togglePanelButton" class="lg:hidden text-gray-500 hover:text-gray-700 focus:outline-none">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16m-7 6h7"></path></svg>
+                </button>
+                <!-- Desktop Hide/Show Button -->
+                <button id="hidePanelButton" class="hidden lg:block text-gray-500 hover:text-gray-700 focus:outline-none">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path></svg>
+                </button>
+            </div>
+            
+            <div id="toolsContent" class="flex-grow flex flex-col space-y-4">
+                <!-- Sequence Info -->
+                <div>
+                    <h3 class="text-lg font-medium text-gray-700">Sequence Info:</h3>
+                    <p class="text-gray-600 text-sm">ID: <span id="sequenceId">N/A</span></p>
+                    <p class="text-gray-600 text-sm">Length: <span id="sequenceLength">N/A</span> bp</p>
+                </div>
+
+                <!-- Feature Filters & Search -->
+                <div class="space-y-3">
+                    <h3 class="text-lg font-medium text-gray-700">Filter & Search Features:</h3>
+                    <div>
+                        <label for="filterType" class="block text-sm font-medium text-gray-700 mb-1">Filter by Type:</label>
+                        <select id="filterType" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50 px-3 py-2 text-sm">
+                            <option value="all">All Types</option>
+                            <option value="gene">Gene</option>
+                            <option value="mRNA">mRNA</option>
+                            <option value="CDS">CDS</option>
+                            <option value="exon">Exon</option>
+                            <option value="tRNA">tRNA</option>
+                            <option value="rRNA">rRNA</option>
+                            <option value="ncRNA">ncRNA</option>
+                            <option value="intron">Intron</option>
+                            <option value="UTR">UTR</option>
+                            <option value="repeat_region">Repeat Region</option>
+                            <option value="mobile_element">Mobile Element</option>
+                            <option value="pseudogene">Pseudogene</option>
+                            <option value="misc_feature">Misc. Feature</option>
+                            <option value="region">Region</option>
+                            <option value="source">Source</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label for="searchFeatures" class="block text-sm font-medium text-gray-700 mb-1">Search Features:</label>
+                        <input type="text" id="searchFeatures" placeholder="Search by ID, gene, product..."
+                               class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50 px-3 py-2 text-sm">
+                    </div>
+                </div>
+
+                <!-- Feature List -->
+                <div>
+                    <h3 class="text-lg font-medium text-gray-700 mb-2">Features (<span id="featureCount">0</span>):</h3>
+                    <div id="featureList" class="space-y-2 max-h-64 overflow-y-auto custom-scrollbar border border-gray-200 p-3 rounded-md bg-gray-50">
+                        <p class="text-gray-500 text-sm italic">No features loaded yet.</p>
+                    </div>
+                </div>
+
+                <!-- Feature Details / Edit Form (initially hidden) -->
+                <div id="featureDetailPanel" class="hidden border border-gray-200 p-4 rounded-md bg-white shadow-inner mt-4">
+                    <h4 class="text-lg font-semibold text-gray-700 mb-3">Edit Feature: <span id="currentFeatureId"></span></h4>
+                    <form id="featureEditForm" class="space-y-3 text-sm">
+                        <div>
+                            <label for="editType" class="block text-gray-600">Type:</label>
+                            <select id="editType" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50 px-3 py-2">
+                                <option value="gene">gene</option>
+                                <option value="mRNA">mRNA</option>
+                                <option value="CDS">CDS</option>
+                                <option value="exon">exon</option>
+                                <option value="tRNA">tRNA</option>
+                                <option value="rRNA">rRNA</option>
+                                <option value="ncRNA">ncRNA</option>
+                                <option value="intron">intron</option>
+                                <option value="UTR">UTR</option>
+                                <option value="transcript">transcript</option>
+                                <option value="repeat_region">repeat_region</option>
+                                <option value="mobile_element">mobile_element</option>
+                                <option value="pseudogene">pseudogene</option>
+                                <option value="misc_feature">misc_feature</option>
+                                <option value="region">region</option>
+                                <option value="source">source</option>
+                            </select>
+                        </div>
+                        <div class="flex space-x-2">
+                            <div class="flex-1">
+                                <label for="editStart" class="block text-gray-600">Start:</label>
+                                <input type="number" id="editStart" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50 px-3 py-2">
+                            </div>
+                            <div class="flex-1">
+                                <label for="editEnd" class="block text-gray-600">End:</label>
+                                <input type="number" id="editEnd" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50 px-3 py-2">
+                            </div>
+                            <div class="flex-1">
+                                <label for="editStrand" class="block text-gray-600">Strand:</label>
+                                <select id="editStrand" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50 px-3 py-2">
+                                    <option value="1">+</option>
+                                    <option value="-1">-</option>
+                                    <option value="0">.</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div>
+                            <label for="editGene" class="block text-gray-600">Gene:</label>
+                            <input type="text" id="editGene" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50 px-3 py-2">
+                        </div>
+                        <div>
+                            <label for="editProduct" class="block text-gray-600">Product:</label>
+                            <input type="text" id="editProduct" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50 px-3 py-2">
+                        </div>
+                        <div>
+                            <label for="editNote" class="block text-gray-600">Note:</label>
+                            <input type="text" id="editNote" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50 px-3 py-2">
+                        </div>
+                        <div>
+                            <label for="editLocusTag" class="block text-gray-600">Locus Tag:</label>
+                            <input type="text" id="editLocusTag" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50 px-3 py-2">
+                        </div>
+                        <div>
+                            <label for="editTranscriptId" class="block text-gray-600">Transcript ID:</label>
+                            <input type="text" id="editTranscriptId" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50 px-3 py-2">
+                        </div>
+                        <div>
+                            <label for="editProteinId" class="block text-gray-600">Protein ID:</label>
+                            <input type="text" id="editProteinId" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50 px-3 py-2">
+                        </div>
+                        <div>
+                            <label for="editDbXref" class="block text-gray-600">DB Xref (comma-separated):</label>
+                            <input type="text" id="editDbXref" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50 px-3 py-2">
+                        </div>
+                        <div id="cdsOnlySection" class="hidden">
+                            <label for="editCodonStart" class="block text-gray-600">Codon Start (for CDS):</label>
+                            <input type="number" id="editCodonStart" min="1" max="3" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50 px-3 py-2">
+                            <label for="codonTableSelect" class="block text-gray-600 mt-2">Codon Table:</label>
+                            <select id="codonTableSelect" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50 px-3 py-2"></select>
+                            <button type="button" id="validateCdsButton" class="mt-2 w-full bg-blue-500 text-white py-2 rounded-md hover:bg-blue-600 transition duration-200">Validate CDS</button>
+                        </div>
+                        <div id="exonsSection" class="hidden"> <!-- Initially hidden, shown for specific types -->
+                            <h5 class="text-md font-semibold text-gray-700 mt-3 mb-2">Exons:</h5>
+                            <div id="exonsList" class="space-y-2">
+                                <!-- Exons will be dynamically added here -->
+                            </div>
+                            <button type="button" id="addExonButton" class="mt-2 w-full bg-indigo-500 text-white py-2 rounded-md hover:bg-indigo-600 transition duration-200">Add Exon</button>
+                        </div>
+                        <div class="flex space-x-2 mt-4">
+                            <button type="submit" class="flex-1 bg-green-600 text-white py-2 rounded-md hover:bg-green-700 transition duration-200">Save Changes</button>
+                            <button type="button" id="deleteFeatureButton" class="flex-1 bg-red-500 text-white py-2 rounded-md hover:bg-red-600 transition duration-200">Delete Feature</button>
+                        </div>
+                        <button type="button" id="cancelEditButton" class="w-full bg-gray-500 text-white py-2 rounded-md hover:bg-gray-600 transition duration-200 mt-2">Cancel</button>
+                    </form>
+                </div>
+
+                <button id="addFeatureButton" class="bg-purple-600 text-white py-2 px-4 rounded-lg font-semibold hover:bg-purple-700 transition duration-200 ease-in-out">Add New Feature</button>
+
+                <!-- Global Actions -->
+                <div class="flex flex-col space-y-3 mt-6 border-t border-gray-200 pt-4">
+                    <h3 class="text-lg font-medium text-gray-700">Global Actions:</h3>
+                    <div class="flex space-x-2">
+                        <button id="flipSequenceButton" class="flex-1 bg-blue-600 text-white py-2 rounded-lg font-semibold hover:bg-blue-700 transition duration-200">Flip Sequence</button>
+                        <div>
+                            <input type="number" id="shiftOriginInput" placeholder="New origin (bp)" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                            <button id="shiftOriginButton" class="mt-2 w-full bg-blue-600 text-white py-2 rounded-lg font-semibold hover:bg-blue-700 transition duration-200">Shift Origin</button>
+                        </div>
+                    </div>
+                    <button id="exportFilesButton" class="bg-gray-700 text-white py-3 px-4 rounded-lg font-semibold hover:bg-gray-800 transition duration-200 ease-in-out">Export GFF3 & FASTA</button>
+                    <button id="cleanupSessionButton" class="bg-red-500 text-white py-3 px-4 rounded-lg font-semibold hover:bg-red-600 transition duration-200 ease-in-out">Reset & Cleanup</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Footer -->
+    <footer class="mt-8 text-center text-gray-500 text-sm">
+        Developed by MrGhost-Aymen
+    </footer>
+
+    <script>
+        // Global variables to store session data and current state
+        let currentSessionId = null;
+        let currentSequenceId = null;
+        let currentSequenceLength = 0;
+        let currentFeatures = []; // Array of feature dictionaries
+        let igvBrowser = null;
+        let codonTables = []; // To store fetched codon tables
+        let editingFeature = null; // Store the feature object being edited
+        let selectedFeatureElement = null; // Reference to the currently selected feature div in the list
+
+        // UI Element References
+        const uploadSection = document.getElementById('uploadSection');
+        const viewerAndToolsSection = document.getElementById('viewerAndToolsSection');
+        const uploadForm = document.getElementById('uploadForm');
+        const uploadButton = document.getElementById('uploadButton');
+        const messageBox = document.getElementById('messageBox');
+
+        const igvContainer = document.getElementById('igvContainer');
+        const igvDiv = document.getElementById('igv-div');
+        const resizeHandle = document.getElementById('resizeHandle');
+        const annotationToolsPanel = document.getElementById('annotationToolsPanel');
+        const togglePanelButton = document.getElementById('togglePanelButton');
+        const hidePanelButton = document.getElementById('hidePanelButton'); // For larger screens
+        const toolsContent = document.getElementById('toolsContent');
+
+        const sequenceIdSpan = document.getElementById('sequenceId');
+        const sequenceLengthSpan = document.getElementById('sequenceLength');
+        const featureCountSpan = document.getElementById('featureCount');
+        const featureListDiv = document.getElementById('featureList');
+        const filterTypeSelect = document.getElementById('filterType');
+        const searchFeaturesInput = document.getElementById('searchFeatures');
+
+        const featureDetailPanel = document.getElementById('featureDetailPanel');
+        const featureEditForm = document.getElementById('featureEditForm');
+        const currentFeatureIdSpan = document.getElementById('currentFeatureId');
+        const editTypeSelect = document.getElementById('editType'); // Changed to select
+        const editStartInput = document.getElementById('editStart');
+        const editEndInput = document.getElementById('editEnd');
+        const editStrandSelect = document.getElementById('editStrand');
+        const editGeneInput = document.getElementById('editGene');
+        const editProductInput = document.getElementById('editProduct');
+        const editNoteInput = document.getElementById('editNote');
+        const editLocusTagInput = document.getElementById('editLocusTag');
+        const editTranscriptIdInput = document.getElementById('editTranscriptId');
+        const editProteinIdInput = document.getElementById('editProteinId');
+        const editDbXrefInput = document.getElementById('editDbXref');
+
+        const cdsOnlySection = document.getElementById('cdsOnlySection');
+        const editCodonStartInput = document.getElementById('editCodonStart');
+        const codonTableSelect = document.getElementById('codonTableSelect');
+        const validateCdsButton = document.getElementById('validateCdsButton');
+        const exonsSection = document.getElementById('exonsSection');
+        const exonsListDiv = document.getElementById('exonsList');
+        const addExonButton = document.getElementById('addExonButton');
+        const addFeatureButton = document.getElementById('addFeatureButton');
+        const deleteFeatureButton = document.getElementById('deleteFeatureButton');
+        const cancelEditButton = document.getElementById('cancelEditButton');
+        const flipSequenceButton = document.getElementById('flipSequenceButton');
+        const shiftOriginInput = document.getElementById('shiftOriginInput');
+        const shiftOriginButton = document.getElementById('shiftOriginButton');
+        const exportFilesButton = document.getElementById('exportFilesButton');
+        const cleanupSessionButton = document.getElementById('cleanupSessionButton');
+
+        // --- Utility Functions ---
+        function showMessage(message, isError = false) {
+            messageBox.textContent = message;
+            messageBox.classList.remove('hidden', 'bg-blue-100', 'text-blue-800', 'border-blue-200', 'bg-red-100', 'text-red-800', 'border-red-200', 'bg-green-100', 'text-green-800', 'border-green-200');
+            if (isError) {
+                messageBox.classList.add('bg-red-100', 'text-red-800', 'border-red-200');
+            } else {
+                messageBox.classList.add('bg-green-100', 'text-green-800', 'border-green-200');
+            }
+            messageBox.classList.remove('hidden');
+        }
+
+        function hideMessage() {
+            messageBox.classList.add('hidden');
+        }
+
+        function showLoading(button, originalText) {
+            button.disabled = true;
+            button.textContent = 'Processing...';
+            button.classList.add('opacity-50', 'cursor-not-allowed');
+            showMessage("Processing files, please wait...", false);
+        }
+
+        function hideLoading(button, originalText) {
+            button.disabled = false;
+            button.textContent = originalText;
+            button.classList.remove('opacity-50', 'cursor-not-allowed');
+            hideMessage();
+        }
+
+        async function fetchCodonTables() {
+            try {
+                const response = await fetch('/api/codon_tables');
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                codonTables = await response.json();
+                populateCodonTableSelect();
+            } catch (error) {
+                console.error("Error fetching codon tables:", error);
+                showMessage("Failed to load codon tables. CDS validation might not work.", true);
+            }
+        }
+
+        function populateCodonTableSelect() {
+            codonTableSelect.innerHTML = '';
+            codonTables.forEach(table => {
+                const option = document.createElement('option');
+                option.value = table.id;
+                option.textContent = table.name;
+                codonTableSelect.appendChild(option);
+            });
+        }
+
+        // Function to render the hierarchical feature list
+        function renderFeatureList() {
+            featureListDiv.innerHTML = '';
+            
+            const filterType = filterTypeSelect.value;
+            const searchTerm = searchFeaturesInput.value.toLowerCase().trim();
+
+            // Create a map for quick lookup of features by ID
+            const featuresMap = new Map(currentFeatures.map(f => [f.id, { ...f, children: [] }]));
+
+            // Build the hierarchy: populate children arrays and identify top-level features
+            const topLevelFeatures = [];
+            featuresMap.forEach(feature => {
+                if (feature.parentId && featuresMap.has(feature.parentId)) {
+                    featuresMap.get(feature.parentId).children.push(feature);
+                } else {
+                    topLevelFeatures.push(feature);
+                }
+            });
+
+            // Sort top-level features and their children for consistent display
+            const sortFeatures = (a, b) => {
+                // Prioritize genes, then mRNA, then CDS/exons. Then by start position.
+                const typeOrder = {'gene': 0, 'mrna': 1, 'transcript': 1, 'ncrna': 1, 'rrna': 1, 'trna': 1, 'cds': 2, 'exon': 3};
+                const typeA = typeOrder[a.type.toLowerCase()] !== undefined ? typeOrder[a.type.toLowerCase()] : 99;
+                const typeB = typeOrder[b.type.toLowerCase()] !== undefined ? typeOrder[b.type.toLowerCase()] : 99;
+
+                if (typeA !== typeB) return typeA - typeB;
+                return a.start - b.start;
+            };
+
+            topLevelFeatures.sort(sortFeatures);
+            topLevelFeatures.forEach(f => f.children.sort(sortFeatures)); // Sort children too
+
+            let renderedCount = 0;
+
+            function appendFeatureToDOM(feature, parentElement, level = 0) {
+                // Apply filters and search
+                const matchesType = (filterType === 'all' || feature.type.toLowerCase() === filterType.toLowerCase());
+                const matchesSearch = searchTerm === '' || 
+                                      (feature.id && feature.id.toLowerCase().includes(searchTerm)) ||
+                                      (feature.gene && feature.gene.toLowerCase().includes(searchTerm)) ||
+                                      (feature.product && feature.product.toLowerCase().includes(searchTerm)) ||
+                                      (feature.type && feature.type.toLowerCase().includes(searchTerm)) ||
+                                      (feature.locus_tag && feature.locus_tag.toLowerCase().includes(searchTerm)) ||
+                                      (feature.transcript_id && feature.transcript_id.toLowerCase().includes(searchTerm)) ||
+                                      (feature.protein_id && feature.protein_id.toLowerCase().includes(searchTerm)) ||
+                                      (feature.db_xref && feature.db_xref.toLowerCase().includes(searchTerm));
+
+                if (!matchesType || !matchesSearch) {
+                    return; // Skip if filter/search doesn't match
+                }
+                renderedCount++;
+
+                const featureDiv = document.createElement('div');
+                // Indent based on level
+                featureDiv.style.paddingLeft = `${level * 1.5}rem`; 
+                featureDiv.className = `feature-item bg-white p-3 rounded-md shadow-sm border border-gray-100 hover:bg-gray-50 cursor-pointer text-sm text-gray-700 ${editingFeature && editingFeature.id === feature.id ? 'selected' : ''}`;
+                featureDiv.dataset.featureId = feature.id;
+                
+                // Construct display text based on available qualifiers
+                let displayName = feature.gene || feature.product || feature.locus_tag || feature.id;
+                displayName = displayName.length > 50 ? displayName.substring(0, 47) + '...' : displayName; // Truncate long names
+
+                featureDiv.innerHTML = `
+                    <p class="font-semibold">${'&ndash; '.repeat(level)}${feature.type} - ${displayName}</p>
+                    <p>Coordinates: ${feature.start}-${feature.end} (${feature.strand === 1 ? '+' : feature.strand === -1 ? '-' : '.'})</p>
+                `;
+                featureDiv.addEventListener('click', () => editFeature(feature.id));
+                parentElement.appendChild(featureDiv);
+
+                // Recursively append children
+                feature.children.forEach(child => appendFeatureToDOM(child, parentElement, level + 1));
+            }
+
+            // Append all filtered and sorted features
+            topLevelFeatures.forEach(feature => appendFeatureToDOM(feature, featureListDiv));
+
+            featureCountSpan.textContent = renderedCount;
+
+            if (renderedCount === 0) {
+                featureListDiv.innerHTML = '<p class="text-gray-500 text-sm italic">No features found for current filters/search.</p>';
+            }
+        }
+
+        function clearFeatureEditForm() {
+            featureEditForm.reset();
+            featureDetailPanel.classList.add('hidden');
+            editingFeature = null;
+            addFeatureButton.classList.remove('hidden'); // Show "Add New Feature" button
+            // Clear exons list and hide sections
+            exonsListDiv.innerHTML = '';
+            exonsSection.classList.add('hidden');
+            cdsOnlySection.classList.add('hidden');
+            // Remove selection highlight
+            if (selectedFeatureElement) {
+                selectedFeatureElement.classList.remove('selected');
+                selectedFeatureElement = null;
+            }
+        }
+
+        function editFeature(featureId) {
+            // Remove previous selection highlight
+            if (selectedFeatureElement) {
+                selectedFeatureElement.classList.remove('selected');
+            }
+
+            editingFeature = currentFeatures.find(f => f.id === featureId);
+            if (!editingFeature) {
+                showMessage('Feature not found for editing.', true);
+                return;
+            }
+
+            // Highlight the selected feature in the list
+            selectedFeatureElement = document.querySelector(`.feature-item[data-feature-id="${featureId}"]`);
+            if (selectedFeatureElement) {
+                selectedFeatureElement.classList.add('selected');
+                selectedFeatureElement.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            }
+
+            currentFeatureIdSpan.textContent = editingFeature.id;
+            editTypeSelect.value = editingFeature.type; 
+            editStartInput.value = editingFeature.start;
+            editEndInput.value = editingFeature.end;
+            editStrandSelect.value = editingFeature.strand;
+            editGeneInput.value = editingFeature.gene || '';
+            editProductInput.value = editingFeature.product || '';
+            editNoteInput.value = editingFeature.note || '';
+            editLocusTagInput.value = editingFeature.locus_tag || '';
+            editTranscriptIdInput.value = editingFeature.transcript_id || '';
+            editProteinIdInput.value = editingFeature.protein_id || '';
+            editDbXrefInput.value = editingFeature.db_xref || '';
+
+
+            // Call this to set initial visibility of CDS and Exons sections
+            toggleCdsAndExonsSections(); 
+            
+            featureDetailPanel.classList.remove('hidden');
+            addFeatureButton.classList.add('hidden'); // Hide "Add New Feature" button while editing
+            deleteFeatureButton.classList.remove('hidden'); // Show delete button when editing existing
+            validateCdsButton.classList.remove('hidden'); // Show validate CDS button
+        }
+
+        // Function to toggle visibility of CDS and Exons sections based on editTypeSelect
+        function toggleCdsAndExonsSections() {
+            const selectedType = editTypeSelect.value.toLowerCase();
+            const exonSupportingTypes = ['cds', 'mrna', 'transcript', 'ncrna', 'rrna', 'trna', 'intron', 'utr']; 
+            // Note: intron/UTR might have simple spans, but CDS/mRNA/transcript can be compound.
+            // For simplicity, we show exons for anything that *could* be multi-part or is a child of gene/mRNA.
+
+            if (selectedType === 'cds') {
+                cdsOnlySection.classList.remove('hidden');
+                editCodonStartInput.value = editingFeature.codon_start || '1';
+                if (editingFeature.codon_table_id) {
+                    codonTableSelect.value = editingFeature.codon_table_id;
+                }
+            } else {
+                cdsOnlySection.classList.add('hidden');
+            }
+
+            if (exonSupportingTypes.includes(selectedType)) {
+                exonsSection.classList.remove('hidden');
+                // Ensure exons exist for rendering, if not, create a default one based on feature bounds
+                if (!editingFeature.exons || editingFeature.exons.length === 0) {
+                     editingFeature.exons = [{
+                        start: parseInt(editStartInput.value),
+                        end: parseInt(editEndInput.value),
+                        strand: parseInt(editStrandSelect.value)
+                     }];
+                }
+                renderExons(editingFeature.exons);
+            } else {
+                exonsSection.classList.add('hidden');
+            }
+        }
+
+        function addNewFeature() {
+            let defaultStart = 1;
+            let defaultEnd = 100;
+
+            // Ensure igvBrowser exists and has a currentRange method
+            if (igvBrowser && typeof igvBrowser.currentRange === 'function') {
+                const range = igvBrowser.currentRange();
+                if (range && range.bpLength > 0) { // Check if range is valid (not empty)
+                    // IGV.js range.start is 0-based, range.end is 0-based exclusive for coordinates
+                    // We convert to 1-based inclusive for the form
+                    defaultStart = Math.floor(range.start) + 1;
+                    defaultEnd = Math.floor(range.end);
+                    
+                    // Ensure defaultEnd does not exceed sequence length
+                    if (defaultEnd > currentSequenceLength) {
+                        defaultEnd = currentSequenceLength;
+                    }
+                    // Ensure defaultStart is valid
+                    if (defaultStart < 1) {
+                        defaultStart = 1;
+                    }
+                    // Ensure end is not before start
+                    if (defaultEnd < defaultStart) {
+                        defaultEnd = defaultStart + 99; // Make it 100bp long, or adjust if it goes beyond sequence_length
+                        if (defaultEnd > currentSequenceLength) defaultEnd = currentSequenceLength;
+                    }
+                }
+            }
+
+            const newFeatureId = 'new-feature-' + Date.now();
+            editingFeature = {
+                id: newFeatureId,
+                type: 'gene', // Default type for new feature
+                start: defaultStart,
+                end: defaultEnd,
+                strand: 1,
+                gene: '',
+                product: '',
+                note: '',
+                locus_tag: '',
+                transcript_id: '',
+                protein_id: '',
+                db_xref: '',
+                codon_start: '1',
+                exons: [{start: defaultStart, end: defaultEnd, strand: 1}] // Default single exon
+            };
+            currentFeatures.push(editingFeature); // Add to list for editing
+            renderFeatureList(); // Re-render to show the new feature in the list
+            editFeature(editingFeature.id); // Open for editing
+            deleteFeatureButton.classList.add('hidden'); // Hide delete button for new feature until saved
+            validateCdsButton.classList.add('hidden'); // Hide validate CDS for new feature until saved
+        }
+
+        function renderExons(exons) {
+            exonsListDiv.innerHTML = '';
+            if (!exons || exons.length === 0) {
+                exonsListDiv.innerHTML = '<p class="text-gray-500 text-sm italic">No exons defined. Add one.</p>';
+                // If no exons, ensure a default one is added to the editingFeature for the save process
+                if (editingFeature) {
+                    editingFeature.exons = [{
+                        start: parseInt(editStartInput.value), 
+                        end: parseInt(editEndInput.value), 
+                        strand: parseInt(editStrandSelect.value)
+                    }];
+                    renderExons(editingFeature.exons); // Re-render to show the default
+                }
+                return;
+            }
+
+            exons.forEach((exon, index) => {
+                const exonDiv = document.createElement('div');
+                exonDiv.className = 'flex items-center space-x-2 bg-gray-100 p-2 rounded-md';
+                exonDiv.innerHTML = `
+                    <label class="text-gray-600">Start:</label>
+                    <input type="number" data-exon-field="start" data-exon-index="${index}" value="${exon.start}" class="flex-1 px-2 py-1 border border-gray-300 rounded-md text-xs">
+                    <label class="text-gray-600">End:</label>
+                    <input type="number" data-exon-field="end" data-exon-index="${index}" value="${exon.end}" class="flex-1 px-2 py-1 border border-gray-300 rounded-md text-xs">
+                    <button type="button" data-exon-index="${index}" class="remove-exon-button bg-red-400 text-white p-1 rounded-full text-xs leading-none">&times;</button>
+                `;
+                exonsListDiv.appendChild(exonDiv);
+            });
+
+            document.querySelectorAll('.remove-exon-button').forEach(button => {
+                button.addEventListener('click', (e) => {
+                    const indexToRemove = parseInt(e.target.dataset.exonIndex);
+                    if (editingFeature.exons.length > 1) { // Always keep at least one exon
+                        editingFeature.exons.splice(indexToRemove, 1);
+                        renderExons(editingFeature.exons);
+                    } else {
+                        showMessage("Cannot remove the last exon. A feature must have at least one exon.", true);
+                    }
+                });
+            });
+
+            document.querySelectorAll('#exonsList input').forEach(input => {
+                input.addEventListener('change', (e) => {
+                    const index = parseInt(e.target.dataset.exonIndex);
+                    const field = e.target.dataset.exonField;
+                    // Ensure that the value is parsed as an integer
+                    editingFeature.exons[index][field] = parseInt(e.target.value);
+                });
+            });
+        }
+
+        async function updateIgvTrack() {
+            if (!igvBrowser) {
+                showMessage("IGV browser not initialized. Cannot update track.", true);
+                return;
+            }
+
+            try {
+                // Send currentFeatures to backend to regenerate GFF file
+                const response = await fetch('/update_gff_file', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        session_id: currentSessionId,
+                        features: currentFeatures
+                    })
+                });
+
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(errorData.error || `HTTP error! status: ${response.status}`);
+                }
+                
+                // Remove existing annotation track if present
+                const existingTrackView = igvBrowser.trackViews.find(tv => tv.track.name === "Genome Annotations");
+                if (existingTrackView) {
+                    igvBrowser.removeTrack(existingTrackView.track);
+                }
+
+                // Load the updated track with a cache-busting parameter
+                await igvBrowser.loadTrack({
+                    name: "Genome Annotations",
+                    format: "gff3",
+                    url: `/static/igvjs/data/${currentSessionId}/annotations.gff3?cacheBust=${Date.now()}`,
+                    indexURL: null, // As we are serving uncompressed
+                    displayMode: "EXPANDED",
+                    visibilityWindow: 1000000,
+                    height: 200
+                });
+                showMessage("IGV.js view updated successfully.", false);
+            } catch (error) {
+                showMessage("Failed to update IGV.js track: " + error.message, true);
+                console.error("IGV track update error:", error);
+            }
+        }
+
+        // --- Event Listeners ---
+        uploadForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const originalButtonText = uploadButton.textContent;
+            showLoading(uploadButton, originalButtonText);
+            hideMessage();
+
+            const formData = new FormData(uploadForm);
+
+            try {
+                const response = await fetch('/upload', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(errorData.error || `HTTP error! status: ${response.status}`);
+                }
+
+                const data = await response.json();
+                console.log("Upload response data:", data);
+
+                currentSessionId = data.session_id;
+                currentSequenceId = data.sequence_id;
+                currentSequenceLength = data.sequence_length;
+                currentFeatures = data.features;
+                
+                // Update sequence info display
+                sequenceIdSpan.textContent = currentSequenceId;
+                sequenceLengthSpan.textContent = currentSequenceLength;
+
+                // Initialize IGV.js
+                if (igvBrowser && typeof igvBrowser.dispose === 'function') {
+                    await igvBrowser.dispose(); // Dispose previous browser if exists
+                }
+                // Clear the IGV div to ensure a fresh render
+                igvDiv.innerHTML = '';
+
+                const igvConfig = data.igv_config;
+                igvBrowser = await igv.createBrowser(igvDiv, {
+                    ...igvConfig,
+                    showNavigation: true,
+                    showRuler: true,
+                    showControls: true,
+                    showChromosomeWidget: true,
+                    showKaryo: true,
+                    trackClick: function(track, features, genomicLocation) {
+                        if (features && features.length > 0 && igvBrowser && typeof igvBrowser.search === 'function') {
+                            let clickedFeatureData = null;
+                            const igvFeature = features[0]; // Primary feature clicked in IGV.js
+
+                            // Strategy 1: Match by ID if present and from our track
+                            // IGV.js might populate 'id' from GFF3's 'ID' or generate one for unnamed features.
+                            if (track.name === "Genome Annotations" && igvFeature.id) {
+                                clickedFeatureData = currentFeatures.find(f => f.id === igvFeature.id);
+                            }
+
+                            // Strategy 2: Fallback - find the feature in our list whose coordinates match closely
+                            // and is the smallest encompassing feature.
+                            if (!clickedFeatureData) {
+                                const matchingFeatures = currentFeatures.filter(f => 
+                                    genomicLocation >= f.start && genomicLocation <= f.end &&
+                                    // Also try to match by type if IGV feature has a type
+                                    (track.name !== "Genome Annotations" || !igvFeature.type || f.type.toLowerCase() === igvFeature.type.toLowerCase())
+                                );
+                                if (matchingFeatures.length > 0) {
+                                    // Sort by length to pick the most specific (smallest) feature
+                                    matchingFeatures.sort((a, b) => (a.end - a.start) - (b.end - b.start));
+                                    clickedFeatureData = matchingFeatures[0];
+                                }
+                            }
+
+                            if (clickedFeatureData) {
+                                editFeature(clickedFeatureData.id); // Open the feature for editing
+                                showMessage(`Feature clicked in IGV: ${clickedFeatureData.gene || clickedFeatureData.product || clickedFeatureData.id}`, false);
+                                // Ensure IGV viewer pans/zooms to the selected feature
+                                igvBrowser.search(`${currentSequenceId}:${clickedFeatureData.start}-${clickedFeatureData.end}`);
+                            } else {
+                                console.warn("Clicked IGV feature not found in currentFeatures:", igvFeature, "at genomic location:", genomicLocation);
+                                showMessage("Clicked feature in IGV but details not found for editing. Try clicking more precisely or filter list.", true);
+                            }
+                        } else {
+                            showMessage("No features clicked or IGV browser not ready.", false);
+                        }
+                    }
+                });
+
+                if (data.initial_locus_string && igvBrowser && typeof igvBrowser.search === 'function') { // Ensure igvBrowser and search method are ready before search
+                    await igvBrowser.search(data.initial_locus_string);
+                    console.log("Navigated to initial locus:", data.initial_locus_string);
+                }
+
+                renderFeatureList();
+                fetchCodonTables(); // Fetch codon tables for CDS validation
+
+                // Show viewer and tools after successful upload
+                uploadSection.classList.add('hidden');
+                viewerAndToolsSection.classList.remove('hidden');
+                
+                // Adjust layout for initial display (important for responsiveness)
+                // Set initial state of panel buttons based on screen size
+                if (window.innerWidth >= 1024) { 
+                    togglePanelButton.classList.add('hidden'); // Hide mobile toggle button
+                    hidePanelButton.classList.remove('hidden'); // Show desktop hide button
+                    toolsContent.classList.remove('hidden'); // Ensure content is visible by default on desktop
+                    annotationToolsPanel.classList.remove('hidden'); // Ensure panel itself is visible
+                    resizeHandle.classList.remove('hidden');
+                    // Reset widths to default split
+                    // Subtract `gap / 2` from each to account for the `space-x-2` which creates 8px gap between them.
+                    const parentWidth = viewerAndToolsSection.offsetWidth;
+                    const gap = 8; // corresponds to space-x-2
+                    const totalAvailableWidth = parentWidth - gap;
+                    igvContainer.style.width = `${(totalAvailableWidth * 0.75)}px`;
+                    annotationToolsPanel.style.width = `${(totalAvailableWidth * 0.25)}px`;
+                    hidePanelButton.innerHTML = `<svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path></svg>`; // Hide icon
+                } else { // mobile screens
+                    togglePanelButton.classList.remove('hidden'); // Show mobile toggle button
+                    hidePanelButton.classList.add('hidden'); // Hide desktop hide button
+                    annotationToolsPanel.classList.remove('hidden'); // Ensure panel itself is visible (stacks)
+                    toolsContent.classList.add('hidden'); // Hide content by default on mobile (will be toggled by button)
+                    igvContainer.style.width = '100%';
+                    annotationToolsPanel.style.width = '100%';
+                    resizeHandle.classList.add('hidden');
+                    togglePanelButton.innerHTML = `<svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16m-7 6h7"></path></svg>`; // Hamburger icon
+                }
+                if (igvBrowser && typeof igvBrowser.resize === 'function') { // Check again after setting width
+                    igvBrowser.resize(); // Ensure IGV draws correctly after layout change
+                }
+
+                showMessage("Files uploaded and viewer loaded successfully! Click on features in the list or IGV to edit.", false);
+
+            } catch (error) {
+                showMessage(`Upload failed: ${error.message}`, true);
+                console.error("Upload error:", error);
+            } finally {
+                hideLoading(uploadButton, originalButtonText);
+            }
+        });
+
+        featureEditForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            if (!editingFeature) return;
+
+            // Create a new object with updated values to ensure no lingering references
+            const updatedFeature = { ...editingFeature }; // Copy existing properties
+            updatedFeature.type = editTypeSelect.value; // Get value from select
+            updatedFeature.start = parseInt(editStartInput.value);
+            updatedFeature.end = parseInt(editEndInput.value);
+            updatedFeature.strand = parseInt(editStrandSelect.value);
+            updatedFeature.gene = editGeneInput.value;
+            updatedFeature.product = editProductInput.value;
+            updatedFeature.note = editNoteInput.value;
+            updatedFeature.locus_tag = editLocusTagInput.value;
+            updatedFeature.transcript_id = editTranscriptIdInput.value;
+            updatedFeature.protein_id = editProteinIdInput.value;
+            updatedFeature.db_xref = editDbXrefInput.value;
+
+            // Update CDS specific properties
+            if (updatedFeature.type.toLowerCase() === 'cds') {
+                updatedFeature.codon_start = editCodonStartInput.value;
+                updatedFeature.codon_table_id = codonTableSelect.value;
+            } else {
+                // If type changes from CDS, remove CDS specific properties
+                delete updatedFeature.codon_start;
+                delete updatedFeature.codon_table_id;
+            }
+            
+            // Update exons based on form inputs, for types that support it
+            const exonSupportingTypes = ['cds', 'mrna', 'transcript', 'ncrna', 'rrna', 'trna', 'intron', 'utr'];
+            if (exonSupportingTypes.includes(updatedFeature.type.toLowerCase())) {
+                updatedFeature.exons = [];
+                document.querySelectorAll('#exonsList input[data-exon-field="start"]').forEach((input, index) => {
+                    const endInput = document.querySelector(`#exonsList input[data-exon-field="end"][data-exon-index="${index}"]`);
+                    if (input && endInput) {
+                        updatedFeature.exons.push({
+                            start: parseInt(input.value),
+                            end: parseInt(endInput.value),
+                            strand: parseInt(editStrandSelect.value) // Exons inherit parent feature's strand
+                        });
+                    }
+                });
+                // If no exons were added in the list but it's an exon-supporting type, add a default one
+                if (updatedFeature.exons.length === 0) {
+                    updatedFeature.exons.push({
+                        start: updatedFeature.start,
+                        end: updatedFeature.end,
+                        strand: updatedFeature.strand
+                    });
+                }
+            } else {
+                // For non-exon supporting types, simplify exons to a single span matching feature bounds
+                updatedFeature.exons = [{
+                    start: updatedFeature.start,
+                    end: updatedFeature.end,
+                    strand: updatedFeature.strand
+                }];
+            }
+
+
+            // Find the index of the feature being edited and replace it in the array
+            const featureIndex = currentFeatures.findIndex(f => f.id === updatedFeature.id);
+            if (featureIndex !== -1) {
+                currentFeatures[featureIndex] = updatedFeature;
+            } else {
+                console.error("Could not find feature to update in currentFeatures (this should not happen for existing features).", updatedFeature);
+                showMessage("Error: Could not find feature to update in internal list.", true);
+                return;
+            }
+            editingFeature = updatedFeature; // Keep editingFeature pointing to the latest version
+
+            // Trigger update to the server and then IGV.js
+            await updateIgvTrack();
+            
+            renderFeatureList(); // Update the feature list in the panel
+            clearFeatureEditForm(); // Hide the edit form
+        });
+
+        cancelEditButton.addEventListener('click', () => {
+            clearFeatureEditForm();
+            renderFeatureList(); // Re-render to ensure list is clean if new feature was being added
+        });
+
+        addFeatureButton.addEventListener('click', async () => {
+            addNewFeature(); // Add the feature to currentFeatures and open for editing
+            // After adding, we want it to appear in IGV immediately, so update track
+            await updateIgvTrack(); 
+        });
+
+        deleteFeatureButton.addEventListener('click', async () => {
+            if (!editingFeature) return;
+
+            const confirmDelete = confirm(`Are you sure you want to delete feature: ${editingFeature.id}?`);
+            if (!confirmDelete) return;
+
+            currentFeatures = currentFeatures.filter(f => f.id !== editingFeature.id);
+            
+            await updateIgvTrack();
+
+            showMessage("Feature deleted and viewer updated.", false);
+            clearFeatureEditForm(); // Hide the edit form
+            renderFeatureList(); // Update the feature list in the panel
+        });
+
+
+        validateCdsButton.addEventListener('click', async () => {
+            if (!editingFeature || editTypeSelect.value.toLowerCase() !== 'cds') { // Use select value
+                showMessage("Select a CDS feature to validate.", true);
+                return;
+            }
+
+            // Ensure exons are up-to-date in editingFeature before sending for validation
+            const tempExons = [];
+            document.querySelectorAll('#exonsList input[data-exon-field="start"]').forEach((input, index) => {
+                const endInput = document.querySelector(`#exonsList input[data-exon-field="end"][data-exon-index="${index}"]`);
+                if (input && endInput) {
+                    tempExons.push({
+                        start: parseInt(input.value),
+                        end: parseInt(endInput.value),
+                        strand: parseInt(editStrandSelect.value)
+                    });
+                }
+            });
+            // If no exons explicitly defined, use feature's main span as a single exon for validation
+            if (tempExons.length === 0) {
+                tempExons.push({
+                    start: parseInt(editStartInput.value),
+                    end: parseInt(editEndInput.value),
+                    strand: parseInt(editStrandSelect.value)
+                });
+            }
+
+
+            const validationData = {
+                feature: { // Send the current state of the feature from the form
+                    id: editingFeature.id,
+                    type: editTypeSelect.value, // Get value from select
+                    start: parseInt(editStartInput.value),
+                    end: parseInt(editEndInput.value),
+                    strand: parseInt(editStrandSelect.value),
+                    gene: editGeneInput.value,
+                    product: editProductInput.value,
+                    note: editNoteInput.value,
+                    locus_tag: editLocusTagInput.value,
+                    transcript_id: editTranscriptIdInput.value,
+                    protein_id: editProteinIdInput.value,
+                    db_xref: editDbXrefInput.value,
+                    codon_start: editCodonStartInput.value,
+                    exons: tempExons, // Use the current exons data (possibly updated from form)
+                    sequence_id: currentSequenceId // Pass sequence_id for backend context
+                },
+                codon_table: codonTableSelect.value,
+                sequence_length: currentSequenceLength,
+                session_id: currentSessionId // Pass session_id for backend to fetch sequence data
+            };
+
+            try {
+                // Add session_id to query parameters for backend to fetch sequence data from session
+                const response = await fetch(`/validate_cds?session_id=${currentSessionId}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(validationData)
+                });
+                const result = await response.json();
+                if (result.valid) {
+                    showMessage("CDS Validation: " + result.message, false);
+                } else {
+                    showMessage("CDS Validation Failed: " + result.message, true);
+                }
+            } catch (error) {
+                showMessage("Error during CDS validation: " + error.message, true);
+                console.error("CDS Validation Error:", error);
+            }
+        });
+
+        addExonButton.addEventListener('click', () => {
+            if (!editingFeature) return;
+            const lastExon = editingFeature.exons[editingFeature.exons.length - 1];
+            // New exon defaults to immediately after the last one, or within feature bounds
+            let newExonStart = lastExon ? lastExon.end + 1 : parseInt(editStartInput.value);
+            let newExonEnd = newExonStart + 99; // Default 100bp length
+
+            // Ensure new exon stays within overall feature bounds
+            if (newExonStart < parseInt(editStartInput.value)) newExonStart = parseInt(editStartInput.value);
+            if (newExonEnd > parseInt(editEndInput.value)) newExonEnd = parseInt(editEndInput.value);
+            if (newExonEnd < newExonStart) newExonEnd = newExonStart; // Ensure end is not before start
+
+            editingFeature.exons.push({
+                start: newExonStart,
+                end: newExonEnd,
+                strand: parseInt(editStrandSelect.value) // Inherit parent feature's strand
+            });
+            renderExons(editingFeature.exons);
+        });
+
+        // Event listener for type change to toggle CDS and Exons sections
+        editTypeSelect.addEventListener('change', toggleCdsAndExonsSections);
+
+
+        flipSequenceButton.addEventListener('click', async () => {
+            const originalButtonText = flipSequenceButton.textContent;
+            showLoading(flipSequenceButton, originalButtonText);
+            hideMessage();
+
+            try {
+                // Pass session_id in query parameters for the backend to retrieve sequence data
+                const response = await fetch(`/flip?session_id=${currentSessionId}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        sequence_id: currentSequenceId,
+                        sequence_length: currentSequenceLength,
+                        features: currentFeatures
+                    })
+                });
+
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(errorData.error || `HTTP error! status: ${response.status}`);
+                }
+
+                const data = await response.json();
+                currentFeatures = data.features;
+                
+                showMessage("Sequence flipped and features updated! Please use 'Export' and then 'Reset & Cleanup' to re-upload and see full changes in IGV.js.", false);
+                renderFeatureList();
+            } catch (error) {
+                showMessage("Failed to flip sequence: " + error.message, true);
+                console.error("Flip sequence error:", error);
+            } finally {
+                hideLoading(flipSequenceButton, originalButtonText);
+            }
+        });
+
+        shiftOriginButton.addEventListener('click', async () => {
+            const newOrigin = parseInt(shiftOriginInput.value);
+            if (isNaN(newOrigin) || newOrigin <= 0 || newOrigin > currentSequenceLength) {
+                showMessage("Please enter a valid origin position (1 to sequence length).", true);
+                return;
+            }
+
+            const originalButtonText = shiftOriginButton.textContent;
+            showLoading(shiftOriginButton, originalButtonText);
+            hideMessage();
+
+            try {
+                // Pass session_id in query parameters for the backend to retrieve sequence data
+                const response = await fetch(`/shift_origin?session_id=${currentSessionId}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        sequence_id: currentSequenceId,
+                        sequence_length: currentSequenceLength,
+                        features: currentFeatures,
+                        new_start: newOrigin
+                    })
+                });
+
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(errorData.error || `HTTP error! status: ${response.status}`);
+                }
+
+                const data = await response.json();
+                currentFeatures = data.features;
+                
+                showMessage("Sequence origin shifted and features updated! Please use 'Export' and then 'Reset & Cleanup' to re-upload and see full changes in IGV.js.", false);
+                renderFeatureList();
+            } catch (error) {
+                showMessage("Failed to shift origin: " + error.message, true);
+                console.error("Shift origin error:", error);
+            } finally {
+                hideLoading(shiftOriginButton, originalButtonText);
+            }
+        });
+
+        exportFilesButton.addEventListener('click', async () => {
+            const originalButtonText = exportFilesButton.textContent;
+            showLoading(exportFilesButton, originalButtonText);
+            hideMessage();
+
+            try {
+                // Pass session_id in query parameters for the backend to retrieve sequence data
+                const response = await fetch(`/export?session_id=${currentSessionId}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        sequence_id: currentSequenceId,
+                        sequence_length: currentSequenceLength,
+                        features: currentFeatures
+                    })
+                });
+
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(errorData.error || `HTTP error! status: ${response.status}`);
+                }
+
+                const data = await response.json();
+                
+                // Create Blob for GFF3
+                const gffBlob = new Blob([data.gff], { type: 'text/gff3' });
+                const gffUrl = URL.createObjectURL(gffBlob);
+                const gffLink = document.createElement('a');
+                gffLink.href = gffUrl;
+                gffLink.download = `${currentSequenceId}_annotations.gff3`;
+                document.body.appendChild(gffLink);
+                gffLink.click();
+                document.body.removeChild(gffLink);
+                URL.revokeObjectURL(gffUrl);
+
+                // Create Blob for FASTA
+                const fastaBlob = new Blob([data.fasta], { type: 'text/fasta' });
+                const fastaUrl = URL.createObjectURL(fastaBlob);
+                const fastaLink = document.createElement('a');
+                fastaLink.href = fastaUrl;
+                fastaLink.download = `${currentSequenceId}_sequence.fasta`;
+                document.body.appendChild(fastaLink);
+                fastaLink.click();
+                document.body.removeChild(fastaLink);
+                URL.revokeObjectURL(fastaUrl);
+
+                showMessage("Files exported successfully!", false);
+
+            } catch (error) {
+                showMessage("Failed to export files: " + error.message, true);
+                console.error("Export error:", error);
+            } finally {
+                hideLoading(exportFilesButton, originalButtonText);
+            }
+        });
+
+        cleanupSessionButton.addEventListener('click', async () => {
+            if (!currentSessionId) {
+                showMessage("No active session to clean up.", true);
+                return;
+            }
+
+            const confirmCleanup = confirm("Are you sure you want to reset the session and remove all temporary files?");
+            if (!confirmCleanup) return;
+
+            const originalButtonText = cleanupSessionButton.textContent;
+            showLoading(cleanupSessionButton, originalButtonText);
+            hideMessage();
+
+            try {
+                const response = await fetch('/cleanup', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ session_id: currentSessionId })
+                });
+
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(errorData.error || `HTTP error! status: ${response.status}`);
+                }
+
+                const data = await response.json();
+                if (data.success) {
+                    showMessage("Session cleaned up. Returning to upload screen...", false);
+                    currentSessionId = null;
+                    currentSequenceId = null;
+                    currentSequenceLength = 0;
+                    currentFeatures = [];
+                    if (igvBrowser && typeof igvBrowser.dispose === 'function') {
+                        await igvBrowser.dispose();
+                        igvDiv.innerHTML = ''; // Clear IGV div
+                        igvBrowser = null;
+                    }
+                    // Reset UI to initial upload state
+                    uploadSection.classList.remove('hidden');
+                    viewerAndToolsSection.classList.add('hidden'); // Ensure this is hidden
+                    clearFeatureEditForm(); // Clear any open edit forms
+                    featureListDiv.innerHTML = '<p class="text-gray-500 text-sm italic">No features loaded yet.</p>'; // Reset feature list display
+                    sequenceIdSpan.textContent = 'N/A';
+                    sequenceLengthSpan.textContent = 'N/A';
+                    featureCountSpan.textContent = '0';
+                    // Reset panel visibility and size for next upload
+                    annotationToolsPanel.classList.remove('hidden'); // Ensure panel is ready for display next time
+                    toolsContent.classList.remove('hidden'); // Ensure content is visible next time
+                    annotationToolsPanel.style.width = ''; // Clear inline style
+                    igvContainer.style.width = ''; // Clear inline style
+                    // Reset button icons and handle visibility for next upload
+                    if (window.innerWidth >= 1024) {
+                        hidePanelButton.innerHTML = `<svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path></svg>`; // Default hide icon
+                        resizeHandle.classList.remove('hidden');
+                    } else {
+                        togglePanelButton.innerHTML = `<svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16m-7 6h7"></path></svg>`; // Default hamburger icon
+                    }
+
+                } else {
+                    showMessage("Error during cleanup: " + (data.error || 'Unknown error'), true);
+                }
+            } catch (error) {
+                showMessage("Network error during cleanup: " + error.message, true);
+                console.error("Cleanup network error:", error);
+            } finally {
+                hideLoading(cleanupSessionButton, originalButtonText);
+            }
+        });
+
+        // --- Resizing Logic ---
+        let isResizing = false;
+        let lastDownX = 0;
+        let initialPanelWidth = 0;
+        let initialIgvWidth = 0;
+
+        resizeHandle.addEventListener('mousedown', (e) => {
+            isResizing = true;
+            lastDownX = e.clientX;
+            // Get current computed widths, not from inline styles
+            initialPanelWidth = annotationToolsPanel.offsetWidth;
+            initialIgvWidth = igvContainer.offsetWidth;
+            document.body.style.cursor = 'ew-resize';
+            // Disable text selection during drag
+            document.body.style.userSelect = 'none';
+            // Add transition-none to avoid jerky resizing with CSS transitions
+            annotationToolsPanel.classList.add('transition-none');
+            igvContainer.classList.add('transition-none');
+        });
+
+        document.addEventListener('mousemove', (e) => {
+            if (!isResizing) return;
+
+            const dx = e.clientX - lastDownX;
+            let newPanelWidth = initialPanelWidth - dx; // Moving handle right increases IGV, decreases panel
+            let newIgvWidth = initialIgvWidth + dx;
+
+            const parentWidth = viewerAndToolsSection.offsetWidth;
+            const gap = viewerAndToolsSection.classList.contains('lg:space-x-2') ? 8 : 0; // 8px for space-x-2
+
+            // Define minimum widths for both panels
+            const minPanelWidth = 250; // px
+            const minIgvWidth = 350; // px
+
+            // Clamp new widths
+            if (newPanelWidth < minPanelWidth) {
+                newPanelWidth = minPanelWidth;
+                newIgvWidth = parentWidth - newPanelWidth - gap;
+            }
+            if (newIgvWidth < minIgvWidth) {
+                newIgvWidth = minIgvWidth;
+                newPanelWidth = parentWidth - newIgvWidth - gap;
+            }
+
+            // Ensure total width doesn't exceed parent width (accounting for gap)
+            if (newPanelWidth + newIgvWidth + gap > parentWidth) {
+                 // Adjust proportionally if constraint hit
+                const overshoot = (newPanelWidth + newIgvWidth + gap) - parentWidth;
+                newPanelWidth -= overshoot / 2;
+                newIgvWidth -= overshoot / 2;
+            }
+
+
+            annotationToolsPanel.style.width = `${newPanelWidth}px`;
+            igvContainer.style.width = `${newIgvWidth}px`;
+            
+            // IGV browser might need a reflow after container resize
+            if (igvBrowser && typeof igvBrowser.resize === 'function') { // Robust check
+                igvBrowser.resize(); 
+            }
+        });
+
+        document.addEventListener('mouseup', () => {
+            isResizing = false;
+            document.body.style.cursor = '';
+            document.body.style.userSelect = '';
+            annotationToolsPanel.classList.remove('transition-none'); // Re-enable transitions
+            igvContainer.classList.remove('transition-none');
+        });
+
+        // --- Panel Toggle Logic ---
+        function toggleAnnotationPanel() {
+            const isPanelCurrentlyHidden = annotationToolsPanel.classList.contains('hidden');
+            
+            annotationToolsPanel.classList.toggle('hidden');
+            toolsContent.classList.toggle('hidden'); // Toggle content visibility within panel
+
+            // Check if on a large screen (lg breakpoint) for hidePanelButton
+            if (window.innerWidth >= 1024) {
+                if (isPanelCurrentlyHidden) { // Panel is about to be shown
+                    resizeHandle.classList.remove('hidden'); // Show resize handle
+                    // Re-establish proportional widths
+                    const parentWidth = viewerAndToolsSection.offsetWidth;
+                    const gap = 8; // corresponds to space-x-2
+                    const totalAvailableWidth = parentWidth - gap;
+                    igvContainer.style.width = `${(totalAvailableWidth * 0.75)}px`;
+                    annotationToolsPanel.style.width = `${(totalAvailableWidth * 0.25)}px`;
+                    hidePanelButton.innerHTML = `<svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path></svg>`; // Hide icon
+                } else { // Panel is about to be hidden
+                    resizeHandle.classList.add('hidden'); // Hide resize handle if panel is hidden
+                    igvContainer.style.width = '100%'; // IGV container takes full width
+                    annotationToolsPanel.style.width = '0px'; // Explicitly set to 0 for better hiding
+                    hidePanelButton.innerHTML = `<svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path></svg>`; // Show "show" icon
+                }
+            } else { // Handle mobile-specific toggle (togglePanelButton)
+                // On mobile, the annotation panel itself is usually full width and stacked.
+                // We just toggle the 'toolsContent' visibility and adjust the icon.
+                if (isPanelCurrentlyHidden) { // Panel content is about to be shown
+                    togglePanelButton.innerHTML = `<svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>`; // X icon
+                } else { // Panel content is about to be hidden
+                    togglePanelButton.innerHTML = `<svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16m-7 6h7"></path></svg>`; // Hamburger icon
+                }
+            }
+
+            if (igvBrowser && typeof igvBrowser.resize === 'function') { // Robust check
+                igvBrowser.resize(); 
+            }
+        }
+
+        // --- Filter and Search Logic (Debounce for search input) ---
+        filterTypeSelect.addEventListener('change', renderFeatureList);
+        
+        let searchDebounceTimeout;
+        searchFeaturesInput.addEventListener('input', () => {
+            clearTimeout(searchDebounceTimeout);
+            searchDebounceTimeout = setTimeout(() => {
+                renderFeatureList();
+            }, 300); // Debounce by 300ms
+        });
+
+
+        // Initial setup on page load
+        document.addEventListener('DOMContentLoaded', () => {
+            fetchCodonTables(); // Fetch codon tables when page loads
+            
+            // Ensure viewer and tools are hidden on initial load
+            uploadSection.classList.remove('hidden');
+            viewerAndToolsSection.classList.add('hidden'); // Start hidden
+            
+            // Set initial state of panel buttons based on screen size
+            if (window.innerWidth >= 1024) { 
+                togglePanelButton.classList.add('hidden'); // Hide mobile toggle button
+                hidePanelButton.classList.remove('hidden'); // Show desktop hide button
+                toolsContent.classList.remove('hidden'); // Ensure content is visible by default on desktop
+            } else { 
+                togglePanelButton.classList.remove('hidden'); // Show mobile toggle button
+                hidePanelButton.classList.add('hidden'); // Hide desktop hide button
+                toolsContent.classList.add('hidden'); // Hide content by default on mobile (will be toggled by button)
+            }
+
+            // Add a resize listener to handle breakpoint changes
+            window.addEventListener('resize', () => {
+                if (window.innerWidth >= 1024) {
+                    togglePanelButton.classList.add('hidden');
+                    hidePanelButton.classList.remove('hidden');
+                    toolsContent.classList.remove('hidden'); // Always show content on desktop
+                    // Ensure panels are side-by-side if they were stacked/hidden on mobile
+                    if (annotationToolsPanel.classList.contains('hidden')) { // If panel was hidden via toggle
+                         annotationToolsPanel.classList.remove('hidden');
+                         resizeHandle.classList.remove('hidden');
+                         const parentWidth = viewerAndToolsSection.offsetWidth;
+                         const gap = 8; // corresponds to space-x-2
+                         const totalAvailableWidth = parentWidth - gap;
+                         igvContainer.style.width = `${(totalAvailableWidth * 0.75)}px`;
+                         annotationToolsPanel.style.width = `${(totalAvailableWidth * 0.25)}px`;
+                         hidePanelButton.innerHTML = `<svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path></svg>`;
+                    } else if (annotationToolsPanel.style.width === '0px' || igvContainer.style.width === '100%') { // If it was hidden or IGV was full width
+                         resizeHandle.classList.remove('hidden');
+                         const parentWidth = viewerAndToolsSection.offsetWidth;
+                         const gap = 8;
+                         const totalAvailableWidth = parentWidth - gap;
+                         igvContainer.style.width = `${(totalAvailableWidth * 0.75)}px`;
+                         annotationToolsPanel.style.width = `${(totalAvailableWidth * 0.25)}px`;
+                    }
+                } else { // Smaller screens
+                    togglePanelButton.classList.remove('hidden');
+                    hidePanelButton.classList.add('hidden');
+                    // On small screens, always full width for main viewer, tools panel stacks below or can be toggled
+                    igvContainer.style.width = '100%';
+                    annotationToolsPanel.style.width = '100%';
+                    annotationToolsPanel.style.removeProperty('width'); // Remove inline width for stacking
+                    igvContainer.style.removeProperty('width'); // Remove inline width for stacking
+                    resizeHandle.classList.add('hidden');
+                    // Ensure toolsContent remains in its toggled state, or default to hidden
+                    if (annotationToolsPanel.classList.contains('hidden') || toolsContent.classList.contains('hidden')) {
+                         togglePanelButton.innerHTML = `<svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16m-7 6h7"></path></svg>`;
+                    } else {
+                         togglePanelButton.innerHTML = `<svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>`;
+                    }
+                }
+                if (igvBrowser && typeof igvBrowser.resize === 'function') { // Robust check
+                    igvBrowser.resize(); 
+                }
+            });
+        });
+    </script>
+</body>
+</html>
