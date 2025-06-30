@@ -1,202 +1,157 @@
-Genome Annotation Tool (Flask + JBrowse 2)
+# 🧬 Genome Annotation Tool
 
-This Flask web application provides a user-friendly interface for uploading, processing, visualizing, and managing genome annotation files (FASTA and GFF3). It integrates external bioinformatics tools like sort, bgzip, and tabix to prepare data for interactive visualization using a bundled JBrowse 2 viewer.
-Features
+A web-based interactive tool for visualizing, editing, and exporting genomic annotations using FASTA and GFF3 files.
 
-    File Upload: Securely upload FASTA sequence files and GFF3 annotation files.
+![Screenshot](![image](https://github.com/user-attachments/assets/13da2c84-f6a7-4d01-bd13-8e6d0a78d0d7)
+) 
 
-    Automated Processing:
+---
 
-        Parses FASTA and GFF3 into Biopython SeqRecord objects.
+## 📌 Features
 
-        Combines GFF3 headers with sorted feature lines.
+- **Visualize genomes** with IGV.js
+- **Add/Edit/Delete annotations** (genes, CDS, exons, etc.)
+- **Search & Filter features** by type, gene name, product, or ID
+- **Export annotated sequences** in FASTA and GFF3 formats
+- **Shift origin** or **flip sequence** to reorient the genome
+- **Session management** for multi-user support
+- **Responsive design** for desktop and mobile
 
-        Compresses GFF3 into BGZF format using bgzip.
+---
 
-        Indexes BGZF GFF3 with tabix for fast random access.
+## 🧰 Technologies Used
 
-        Generates JBrowse 2-compatible config.json, FASTA, and FASTA index (.fai) files.
+- **Frontend**: HTML5, Tailwind CSS, JavaScript, IGV.js
+- **Backend**: Python Flask
+- **Data Handling**: Biopython for parsing FASTA/GFF3
+- **File Compression**: Optional bgzip/tabix support (configurable)
 
-    Interactive Visualization: Seamlessly launches a JBrowse 2 instance to display your genome sequence and annotations.
+---
 
-    Annotation Management:
+## 🚀 Getting Started
 
-        View parsed annotations in a table.
+### Prerequisites
 
-        Validate CDS (Coding Sequence) features against selected codon tables for common issues (length divisibility by 3, start/stop codons, internal stop codons).
+- Python 3.8+
+- Node.js (for Tailwind CLI, optional)
+- [Optional] `bgzip`, `tabix`, and `sort` binaries installed for compressed output
 
-        Perform genome modifications:
+### Clone the Repository
 
-            Reverse Complement the entire sequence and adjust feature coordinates.
+```bash
+git clone https://github.com/MrGhost-Aymen/Genome-Annotation-Tool.git
+cd genome-annotation-tool
+```
 
-            Shift the circular genome origin and update feature locations.
+### Install Dependencies
 
-    Data Export: Download the modified FASTA and GFF3 files.
+#### Backend (Python Flask)
 
-    Session Management: Creates unique sessions for each upload, allowing isolated data processing.
+```bash
+pip install -r requirements.txt
+```
 
-Prerequisites
+---
 
-Before running the application, ensure you have the following installed:
+## ⚙️ Configuration
 
-    Python 3.x: Download from python.org.
+Edit the top of `app.py` to set paths for external tools:
 
-    Flask: A Python web framework.
+```python
+BGZIP_PATH = "/usr/bin/bgzip"  # Update this path
+TABIX_PATH = "/usr/bin/tabix"
+SORT_PATH = "/usr/bin/sort"
 
-    Biopython: For sequence and feature manipulation.
+USE_UNCOMPRESSED_GFF = True  # Set to False if using bgzip/tabix
+```
 
-    External HTSlib Tools: bgzip and tabix (from HTSlib)
+---
 
-    External sort utility: A robust sorting tool (e.g., from GNU CoreUtils or MSYS2).
+## 🏃‍♂️ Running the App
 
-Acquiring HTSlib Tools and sort on Windows (Important!)
+Start the Flask server:
 
-This application relies on external command-line tools (bgzip.exe, tabix.exe, sort.exe) to process genomic files. For Windows users, acquiring compatible versions that work well with JBrowse 2's client-side JavaScript decompressor can be tricky.
+```bash
+python app.py
+```
 
-Recommended Approaches for Windows:
+Open your browser and go to:  
+👉 http://localhost:5000
 
-    1. Windows Subsystem for Linux (WSL2) - Highly Recommended for Reliability:
-    This is the most robust solution for Windows users, providing a native Linux environment where HTSlib tools behave predictably.
+---
 
-        Install WSL2: Follow Microsoft's guide: Install WSL.
+## 📁 File Structure
 
-        Install a Linux Distribution: e.g., Ubuntu from the Microsoft Store.
+```
+.
+├── app.py                  # Main Flask backend
+├── static/
+│   ├── igvjs/
+├── templates/
+│   └── index.html          # Main frontend page
+└── uploads/                # Temporary upload storage
+```
 
-        Inside WSL2, install samtools and sort:
+---
 
-        sudo apt update
-        sudo apt install samtools # This includes bgzip and tabix
-        sudo apt install coreutils # This includes sort
+## 🧪 Testing
 
-        Run Flask from WSL2: You can then clone this repository and run your Flask app entirely within your WSL2 Linux environment. Flask will be accessible from your Windows browser via localhost.
+You can test the application using sample data:
 
-    2. MSYS2 (Recommended for Native Windows Binaries):
-    MSYS2 provides a Unix-like environment for Windows, allowing you to install GNU tools like sort and bioinformatics tools like HTSlib (which includes bgzip and tabix).
+- FASTA file: `test_data/sample.fasta`
+- GFF3 file: `test_data/sample.gff3`
 
-        Download and install MSYS2: From msys2.org.
+---
 
-        Open the MSYS2 MinGW 64-bit terminal.
+## 💾 Exporting Annotations
 
-        Install necessary packages:
+After making changes:
+1. Click **Export GFF3 & FASTA**
+2. Your browser will download both updated files
 
-        pacman -Syu
-        pacman -Su
-        pacman -S mingw-w64-x86_64-htslib # For bgzip and tabix
-        pacman -S msys/coreutils         # For sort
+---
 
-        Locate the executables: After installation, you will typically find them in C:\msys64\mingw64\bin\ (for bgzip.exe, tabix.exe) and C:\msys64\usr\bin\ (for sort.exe).
+## 🧹 Session Cleanup
 
-        Update paths in app.py: You must update the BGZIP_PATH, TABIX_PATH, and SORT_PATH variables in app.py to point to these exact locations on your system.
+Each user gets a unique session. You can manually clean up sessions via:
 
-        BGZIP_PATH = r"C:\msys64\mingw64\bin\bgzip.exe"
-        TABIX_PATH = r"C:\msys64\mingw64\bin\tabix.exe"
-        SORT_PATH = r"C:\msys64\usr\bin\sort.exe"
+```bash
+POST /cleanup { "session_id": "your-session-id" }
+```
 
-    3. Pre-compiled Binaries (Less Reliable for JBrowse Compatibility):
-    You can try downloading pre-compiled Windows binaries for bgzip, tabix, and sort from various bioinformatics tool websites. However, we have observed that certain Windows builds of bgzip.exe can produce BGZF files that JBrowse 2's JavaScript decompressor might find problematic, leading to "incorrect gzip header check" errors, even if bgzip.exe itself can decompress them. Using the MSYS2 or WSL2 builds is generally more reliable.
+Or let sessions expire naturally.
 
-Setup Instructions
+---
 
-    Clone the repository:
+## 🛡️ Security Notes
 
-    git clone https://github.com/MrGhost-Aymen/genome-annotation-tool.git
-    cd genome-annotation-tool
+- Input sanitization is important when accepting GFF3 files from users.
+- Consider CSRF protection for production deployment.
+- Validate all feature edits before writing back to GFF3.
 
-    Create a virtual environment (recommended):
+---
 
-    python -m venv venv
-    # On Windows:
-    .\venv\Scripts\activate
-    # On macOS/Linux:
-    source venv/bin/activate
+## 🧩 Future Enhancements
 
-    Install Python dependencies:
+- Add Undo/Redo functionality
+- Support multiple tracks and layered annotations
+- Implement user login and persistent storage
+- Integrate BLAST search or functional annotation suggestions
+- Add unit tests and CI/CD pipeline
 
-    pip install -r requirements.txt
+---
 
-    (Create a requirements.txt file with Flask, biopython, werkzeug, pathlib, python-mimetypes).
-    Example requirements.txt:
+## 🤝 Contributing
 
-    Flask
-    biopython
-    werkzeug
-    # pathlib is usually built-in
-    # mimetypes is usually built-in
+Contributions are welcome! Please open an issue or submit a pull request.
 
-    Acquire and configure external tools:
-    Follow the "Acquiring HTSlib Tools on Windows" section above to get bgzip.exe, tabix.exe, and sort.exe and update their paths in app.py.
 
-    Download and setup JBrowse 2 static files:
+---
 
-        Go to the JBrowse 2 website.
+## 📬 Questions?
 
-        Download the latest "JBrowse 2 Web" distribution (look for the .zip or .tar.gz file).
+For questions or feedback, feel free to [open an issue](ouamoa@gmail.com).
 
-        Extract the contents of the downloaded archive.
+---
 
-        Rename the extracted folder (e.g., jbrowse-web-2.x.x) to jbrowse2.
-
-        Move the jbrowse2 folder into your Flask application's static directory.
-        Your project structure should look something like this:
-
-        genome-annotation-tool/
-        ├── app.py
-        ├── static/
-        │   ├── jbrowse2/          <-- JBrowse 2 extracted here
-        │   │   ├── index.html
-        │   │   ├── config.json
-        │   │   ├── data/
-        │   │   └── ... (other JBrowse files)
-        │   ├── codon_tables.json
-        │   └── bgzip.exe          <-- Your bgzip.exe
-        │   └── tabix.exe          <-- Your tabix.exe
-        ├── requirements.txt
-        └── venv/
-        └── uploads/
-
-        Ensure static/jbrowse2/viewer.html exists and is the main entry point for the JBrowse viewer (as referenced in app.py).
-
-    Run the Flask application:
-
-    python app.py
-
-    The application will typically run on http://127.0.0.1:5000.
-
-Usage
-
-    Open your browser and navigate to http://127.0.0.1:5000.
-
-    Upload your FASTA and GFF3 files using the provided forms.
-
-    Upon successful upload and processing, a new JBrowse 2 viewer will open, displaying your genomic data.
-
-    Use the application's interface to validate CDS features, flip the sequence, shift the origin, or export your processed files.
-
-Troubleshooting
-
-    "Error: problem decompressing block: incorrect gzip header check" in JBrowse 2:
-    This is a known issue specific to certain Windows builds of bgzip.exe and JBrowse 2's JavaScript decompressor. Even if bgzip.exe and tabix.exe appear to work correctly on the server-side, JBrowse's client-side JavaScript can be very sensitive to the exact byte structure of the BGZF file.
-
-        Solution: Follow the WSL2 setup instructions in the Prerequisites section. Running the Flask app and HTSlib tools within WSL2's Linux environment provides binaries that are highly compatible with JBrowse 2.
-
-        Alternatively, try different builds of bgzip.exe (e.g., from newer MSYS2 installations, or other pre-compiled sources), but WSL2 is the most reliable fix.
-
-    sort or bgzip or tabix FileNotFoundError or CalledProcessError:
-
-        Check Paths: Ensure BGZIP_PATH, TABIX_PATH, and SORT_PATH in app.py are absolute and correct for your system.
-
-        Permissions: Make sure the Flask app has execute permissions on the .exe files.
-
-        Dependencies: Ensure the msys2 environment (if used) is correctly set up and all required DLLs are in place or on your system's PATH. Running from the MSYS2 MinGW 64-bit terminal often helps.
-
-    "Empty sequence in FASTA file" or "FASTA parsing error":
-
-        Ensure your FASTA file is correctly formatted and contains a sequence.
-
-    "Invalid coordinates" or "Malformed GFF3 line":
-
-        Review your GFF3 file for syntax errors, incorrect 1-based vs 0-based coordinates, or features extending beyond the sequence length.
-
-Contributing
-
-Feel free to fork this repository, open issues, and submit pull requests.
+Let me know if you'd like me to generate a ZIP-ready version or help with GitHub Actions CI setup as well!
