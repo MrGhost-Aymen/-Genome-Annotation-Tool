@@ -2,7 +2,7 @@
 
 A web-based interactive tool for visualizing, editing, and exporting genomic annotations using FASTA and GFF3 files.
 
-![Screenshot]
+
 ![image](https://github.com/user-attachments/assets/d98edb28-44d1-4cd5-b5a4-de09396578a6)
  
 
